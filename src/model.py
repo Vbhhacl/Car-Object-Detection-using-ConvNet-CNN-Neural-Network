@@ -1,22 +1,33 @@
-from tensorflow.keras.applications import ResNet50
-from tensorflow.keras.layers import Dense, GlobalAveragePooling2D
-from tensorflow.keras.models import Model
+import tensorflow as tf
 
 def build_model():
-    base_model = ResNet50(
-        weights='imagenet',
+    base_model = tf.keras.applications.MobileNetV2(
+        input_shape=(128, 128, 3),
         include_top=False,
-        input_shape=(128, 128, 3)   # ✅ FIXED
+        weights="imagenet"
     )
 
+    base_model.trainable = False
+
     x = base_model.output
-    x = GlobalAveragePooling2D()(x)
-    x = Dense(128, activation='relu')(x)
-    output = Dense(1, activation='sigmoid')(x)
+    x = tf.keras.layers.GlobalAveragePooling2D()(x)
 
-    model = Model(inputs=base_model.input, outputs=output)
+    # Shared features
+    x = tf.keras.layers.Dense(128, activation="relu")(x)
 
-    for layer in base_model.layers:
-        layer.trainable = False
+    # 🟢 Classification head (car / no car)
+    class_output = tf.keras.layers.Dense(
+        1, activation="sigmoid", name="class"
+    )(x)
+
+    # 🟢 Bounding box head
+    box_output = tf.keras.layers.Dense(
+        4, activation="sigmoid", name="bbox"
+    )(x)
+
+    model = tf.keras.Model(
+        inputs=base_model.input,
+        outputs=[class_output, box_output]
+    )
 
     return model
