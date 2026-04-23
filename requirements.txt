@@ -2,7 +2,7 @@ tensorflow
 keras
 numpy
 matplotlib
-opencv-python
+opencv-python-headless
 scikit-learn
 streamlit
 pandas
