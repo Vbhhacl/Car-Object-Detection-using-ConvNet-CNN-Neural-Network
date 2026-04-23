@@ -7,27 +7,19 @@ def build_model():
         weights="imagenet"
     )
 
+    # Start with frozen base to train the new heads
     base_model.trainable = False
 
     x = base_model.output
     x = tf.keras.layers.GlobalAveragePooling2D()(x)
-
-    # Shared features
     x = tf.keras.layers.Dense(128, activation="relu")(x)
+    x = tf.keras.layers.Dropout(0.2)(x) # Added dropout to prevent overfitting
 
-    # 🟢 Classification head (car / no car)
-    class_output = tf.keras.layers.Dense(
-        1, activation="sigmoid", name="class"
-    )(x)
+    # Classification head
+    class_output = tf.keras.layers.Dense(1, activation="sigmoid", name="class")(x)
 
-    # 🟢 Bounding box head
-    box_output = tf.keras.layers.Dense(
-        4, activation="sigmoid", name="bbox"
-    )(x)
+    # Bounding box head (Sigmoid is perfect since we normalized 0-1)
+    box_output = tf.keras.layers.Dense(4, activation="sigmoid", name="bbox")(x)
 
-    model = tf.keras.Model(
-        inputs=base_model.input,
-        outputs=[class_output, box_output]
-    )
-
+    model = tf.keras.Model(inputs=base_model.input, outputs=[class_output, box_output])
     return model
