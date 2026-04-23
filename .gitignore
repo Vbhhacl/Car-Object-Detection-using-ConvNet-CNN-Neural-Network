@@ -3,3 +3,6 @@ data/
 *.ckpt
 *.log
 __pycache__/
+*.zip
+data/
+.venv/
