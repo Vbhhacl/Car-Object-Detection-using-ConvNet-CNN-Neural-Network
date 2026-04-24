@@ -13,6 +13,7 @@ def load_data(image_folder, csv_path):
     df = pd.read_csv(csv_path)
     images = []
     boxes = []
+    classes = []
 
     for _, row in df.iterrows():
         img_path = os.path.join(image_folder, row["image"])
@@ -35,12 +36,31 @@ def load_data(image_folder, csv_path):
         xmax = row["xmax"] / orig_w
 
         boxes.append([ymin, xmin, ymax, xmax])
+        classes.append(1)
 
-    return np.array(images), np.array(boxes)
+    # Also include some negative images (no car annotations) if present
+    all_files = sorted(os.listdir(image_folder))
+    labeled_files = set(df["image"].unique())
+    negative_files = [f for f in all_files if f not in labeled_files]
+
+    # sample negatives up to number of positives (1:1) to balance
+    max_neg = len(images)
+    for nf in negative_files[:max_neg]:
+        img_path = os.path.join(image_folder, nf)
+        try:
+            img = load_img(img_path, target_size=(IMG_SIZE, IMG_SIZE))
+            img = img_to_array(img) / 255.0
+        except Exception:
+            continue
+        images.append(img)
+        # bbox zeros for negatives
+        boxes.append([0.0, 0.0, 0.0, 0.0])
+        classes.append(0)
+
+    return np.array(images), np.array(boxes), np.array(classes)
 
 # -------- PREP --------
-X, y_bbox = load_data("data/training_images", "data/labels.csv")
-y_class = np.ones((len(X), 1))
+X, y_bbox, y_class = load_data("data/training_images", "data/labels.csv")
 
 X_train, X_val, yb_train, yb_val, yc_train, yc_val = train_test_split(
     X, y_bbox, y_class, test_size=0.2, random_state=42
@@ -57,7 +77,18 @@ model.compile(
 )
 
 print("Starting Phase 1: Training Heads...")
-model.fit(X_train, {"class": yc_train, "bbox": yb_train}, epochs=20, batch_size=16)
+# For bbox loss, only apply it to positive samples: use sample weights
+sb_train = yc_train.reshape(-1)
+sb_val = yc_val.reshape(-1)
+
+model.fit(
+    X_train,
+    {"class": yc_train, "bbox": yb_train},
+    sample_weight=[None, sb_train],
+    validation_data=(X_val, {"class": yc_val, "bbox": yb_val}, [None, sb_val]),
+    epochs=20,
+    batch_size=16
+)
 
 # PHASE 2: Fine-Tuning (Unfreeze the base model)
 print("Starting Phase 2: Fine-Tuning base model...")
@@ -72,7 +103,8 @@ early_stop = tf.keras.callbacks.EarlyStopping(monitor='val_loss', patience=10, r
 
 model.fit(
     X_train, {"class": yc_train, "bbox": yb_train},
-    validation_data=(X_val, {"class": yc_val, "bbox": yb_val}),
+    sample_weight=[None, sb_train],
+    validation_data=(X_val, {"class": yc_val, "bbox": yb_val}, [None, sb_val]),
     epochs=80, 
     batch_size=16,
     callbacks=[early_stop]
